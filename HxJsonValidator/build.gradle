@@ -1,0 +1,33 @@
+apply plugin: 'com.android.library'
+
+version = "2026.10.14"
+
+android {
+    namespace 'com.stupidbeauty.hxjsonvalidator'
+    compileSdkVersion 33
+    buildToolsVersion '28.0.3'
+
+    defaultConfig {
+        minSdkVersion 24
+        targetSdkVersion 28
+        versionCode 1
+        versionName version
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    // 暂未引入第三方依赖；后续按需添加
+}
