@@ -56,3 +56,5 @@ google-services.json
 /../prompt.mat/
 /../sh.at/
 /../.hg/
+# hg 顶层仓元信息文件（不入本 git 仓）
+INIT_NOTE.md
