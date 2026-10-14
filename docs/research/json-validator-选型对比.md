@@ -157,3 +157,87 @@ SisterFuture 仓
 ✅ **采用 HxJsonValidator 自研 FSM**（基于 #F 调研）
 ❌ 不使用 Gson / org.json / Moshi / Jackson / kotlinx.serialization / Schema 库
 ✅ 后续可叠加 Schema 库（若主人 #G6 选择要 Schema）
+
+---
+
+## 10. 主人追问后的补充调研（2026-10-14 后续）
+
+主人质疑："当今世界上真的没有一个开源库能够满足吗？Python 领域应该有专门库。"
+
+### 10.1 实际搜索结果（GitHub API 真实数据）
+
+主人直觉**完全正确**。在 Python/Dart/JS 生态下存在**专门解决"按字符位置错误信息 + LLM 场景"**的库：
+
+| 库 | 语言 | 描述摘录 | star | 解决核心需求 |
+|---|---|---|---|---|
+| [DrowLink/llm_schema](https://github.com/DrowLink/llm_schema) | Dart | "Zod-like runtime schema validation for LLM structured outputs. Features JSON Schema generation, lenient model text parsing, and actionable self-repair loops" | 2 | ✅ 完全匹配 |
+| [harishkotra/structured-output-validator](https://github.com/harishkotra/structured-output-validator) | JS | "call the LLM → parse the raw response → validate against a schema → retry with targeted corrections" | 1 | ✅ 完全匹配 |
+| [PHclaw/agent-output-parser](https://github.com/PHclaw/agent-output-parser) | Python | "Parse LLM outputs into structured data — JSON, XML, Pydantic models" | 1 | ✅ |
+| [sdsc-ordes/odtp-llm-parser](https://github.com/sdsc-ordes/odtp-llm-parser) | Python | "After providing a JSON schema is able to give back a structured output in json" | 1 | ✅ |
+| [TopherBot/json-linter](https://github.com/TopherBot/json-linter) | Python | "validates JSON files, reports syntax errors with exact line/column positions" | 0 | ✅ |
+| [mani787060/structured-output-parser](https://github.com/mani787060/structured-output-parser) | Python | "LangChain's StructuredOutputParser using ResponseSchema" | 1 | ✅ |
+| [clifton/rstructor](https://github.com/clifton/rstructor) | Rust | "Pydantic + Instructor for Rust: extract structured, validated data from LLMs" | 32 | ✅ |
+| [LangChain-Output-Parsers](https://github.com/agrawalpraveen12/LangChain-Output-Parsers) | Python | "Structured LLM output validation using LangChain Output Parsers" | 1 | ✅ |
+| [ParseFlow](https://github.com/MukundaKatta/ParseFlow) | Python | "Robust structured output parsing for LLM responses — JSON extraction, repair" | 1 | ✅ |
+| [Read4ai/read4ai-excel](https://github.com/read4ai/read4ai-excel) | Kotlin | "AI-friendly Excel parser" | 2 | ⚠️ Excel 特定 |
+
+### 10.2 主人结论 = 必须自研（修正前期结论）
+
+**主人归纳**：
+> "那这样看起来，还是有必要自研。因为安卓领域内没有这个库存在。"
+
+**这个判断完全正确**。理由：
+
+1. **Python 库不能用在 Android JVM 上**：sisterfuture 是 Android app，没有 Python runtime
+2. **Dart 库**（llm_schema）跨平台好，但 sisterfuture 主工程是 Java/Kotlin 混合，主人明确拒绝 Kotlin
+3. **Rust 库**（rstructor）跨平台，但需要 JNI bridge，工作量比自研还大
+4. **JS 库**（structured-output-validator）需要 WebView/JavaScript bridge，不适合"按调用校验"场景
+
+### 10.3 自研路径下，借鉴现成库的设计思路
+
+主人问询"是不是真的需要自研"的回答给了我们**重要补充**——自研不是闭门造车，要**参考现成库的最佳实践**：
+
+| 借鉴自 | 借鉴什么 | 应用到 HxJsonValidator |
+|---|---|---|
+| **DrowLink/llm_schema** | "self-repair loops"（自修复循环） | HxJsonValidator 只做"纯校验 + 错误信息"；自修复由 sisterfuture 应用层编排（用我们的 `ValidationResult` 喂回大模型） |
+| **harishkotra/structured-output-validator** | "agent loop: call → parse → validate → retry" | 提供 FSM 之外的 `parsePartialJson()` 工具，从大模型输出中"抠出"最像 JSON 的部分 |
+| **TopherBot/json-linter** | "exit with conventional status codes" | `ValidationResult.toErrorCode()` 提供枚举 |
+| **rstructor** | "retry on validation errors" | 提供 `ValidationResult.toRetryPrompt()` —— 把错误格式化成大模型能理解的"重试 prompt" |
+
+### 10.4 主人追问的更深远意义
+
+主人这次追问揭示了**调研的盲点**：我之前没主动搜**整个开源生态**，只盯着 Java/Android 圈。
+
+**修正后的调研方法论**（写进长期记忆）：
+- 任何"自研 X 库"的决策前，**先全生态搜**（GitHub API 跨语言搜）
+- 即使最终仍要自研（因为目标语言/平台不同），也要参考现成库的设计
+- 不要把"自研"当作"重新发明轮子"——是**针对特定生态的适配**
+
+### 10.5 引用 DrowLink/llm_schema 的设计（用于 HxJsonValidator v0.2）
+
+参考其"lenient model text parsing"思路，未来在 HxJsonValidator 加一个辅助方法：
+
+```java
+// v0.2 计划：宽松解析（从大模型输出中提取最像 JSON 的部分）
+public class LenientJsonExtractor {
+    /**
+     * 从混乱文本中提取第一段最像 JSON 的子串
+     * 启发式：
+     *  - 找最外层 { ... } 或 [ ... ]
+     *  - 自动补全缺引号
+     *  - 移除尾随逗号
+     * 
+     * 参考：DrowLink/llm_schema 的 lenient parsing 设计
+     */
+    public static Optional<String> extractCandidateJson(String raw);
+}
+```
+
+**这个 v0.2 功能不在当前 #M2 计划内**，待主人后续需要时再开新任务。
+
+### 10.6 调研意义
+
+✅ **确认了自研必要性**（主人直觉对）
+✅ **借鉴了现成库的最佳设计**（不是闭门造车）
+✅ **建立了"全生态搜索"调研方法论**（避免再犯同类盲点）
+✅ **为主人后续问题收集了更多参考**（DrowLink/llm_schema 等可作为 v0.2 的参考）
